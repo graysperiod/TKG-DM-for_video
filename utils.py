@@ -70,3 +70,26 @@ def tkg_noise(latents: torch.Tensor, device: str) -> torch.Tensor:
     mask = mask.to(device).to(torch.float16)
     latents = mask * latents + (1 - mask) * z_T_star
     return latents
+
+def tkg_noise_3d(latents: torch.Tensor, device: str) -> torch.Tensor:
+    assert latents.dim() == 5, f"Expect 5D latents [B, C, T, H, W], got {latents.shape}"
+
+    latents = latents.to(device)
+    dtype = latents.dtype
+
+    B, C, T, H, W = latents.shape
+
+    latents_4d = latents.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+    z_T_star_4d = channel_mean_shift(latents_4d)
+
+    mask = create_2d_gaussian(height=H, width=W, std_dev=0.5)
+    mask = torch.nn.functional.interpolate(mask, size=(H, W), mode='bilinear', align_corners=False)
+
+    mask = mask.to(device=device, dtype=dtype)
+    mask = mask.expand(B * T, C, H, W)
+
+    latents_4d = mask * latents_4d + (1.0 - mask) * z_T_star_4d
+
+    latents_out = latents_4d.view(B, T, C, H, W).permute(0, 2, 1, 3, 4)
+
+    return latents_out
